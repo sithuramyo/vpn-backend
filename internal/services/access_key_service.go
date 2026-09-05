@@ -50,6 +50,7 @@ func (s *AccessKeyService) Create(ctx context.Context, input CreateAccessKeyInpu
 	provisioned, err := s.provider.CreateAccessKey(ctx, vpn.AccessKeySpec{
 		Name:              input.Name,
 		TrafficLimitBytes: input.TrafficLimitBytes,
+		Port:              server.TLSPort,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("provision access key: %w", err)
@@ -146,6 +147,7 @@ func (s *AccessKeyService) Rotate(ctx context.Context, id uuid.UUID) (*models.Ac
 	provisioned, err := s.provider.RotateAccessKey(ctx, key.SecretReference, vpn.AccessKeySpec{
 		Name:              key.Name,
 		TrafficLimitBytes: key.TrafficLimitBytes,
+		Port:              key.Server.TLSPort,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("rotate on data plane: %w", err)

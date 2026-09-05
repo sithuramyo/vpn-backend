@@ -10,6 +10,13 @@ import "context"
 type AccessKeySpec struct {
 	Name              string
 	TrafficLimitBytes int64
+	// Port pins the key to a specific data-plane port (e.g. the server's
+	// public TLS port, so it's reachable on networks that block
+	// non-standard ports). Outline's create/rotate calls otherwise just
+	// attach the new key to whatever listener already exists rather than
+	// consulting its own server-wide "port for new access keys" default,
+	// so this must be set explicitly - zero leaves the choice to Outline.
+	Port int
 }
 
 // ProvisionedKey is what the data plane hands back after creating a key:

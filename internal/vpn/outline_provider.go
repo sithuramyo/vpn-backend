@@ -83,8 +83,17 @@ type outlineTransferMetrics struct {
 }
 
 func (p *OutlineShadowsocksProvider) CreateAccessKey(ctx context.Context, spec AccessKeySpec) (*ProvisionedKey, error) {
+	// An empty body would make Outline just attach the key to whatever
+	// listener already exists (see AccessKeySpec.Port) rather than opening
+	// one on the port we actually want, so the port is always requested
+	// explicitly when the caller specifies one.
+	var body any
+	if spec.Port > 0 {
+		body = map[string]int{"port": spec.Port}
+	}
+
 	var created outlineAccessKey
-	if err := p.doJSON(ctx, http.MethodPost, "/access-keys", nil, &created); err != nil {
+	if err := p.doJSON(ctx, http.MethodPost, "/access-keys", body, &created); err != nil {
 		return nil, fmt.Errorf("outline: create access key: %w", err)
 	}
 
