@@ -1,7 +1,11 @@
-# Example Caddy config for the single-VPS deployment described in
-# VPN_Management_Backend_Prompt.md section 11/21. Caddy terminates TLS for
-# both hostnames; it never proxies raw Shadowsocks, only WebSocket
-# upgrades that the Outline server itself decodes into Shadowsocks.
+# Example Caddy config for the backend + VPN data plane on the DigitalOcean
+# VPS. The frontend is NOT on this box - it's deployed to Vercel
+# separately (see ../../vpn-frontend/README.md) and its domain
+# (admin.thestrm.space) is a CNAME managed by Vercel, not this Caddy.
+#
+# Caddy terminates TLS for the two hostnames below; it never proxies raw
+# Shadowsocks - only plain HTTP (the API) and WebSocket upgrades that the
+# Outline server itself decodes into Shadowsocks.
 
 api.vpn.thestrm.space {
 	reverse_proxy 127.0.0.1:8080

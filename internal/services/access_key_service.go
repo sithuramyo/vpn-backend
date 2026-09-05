@@ -206,13 +206,20 @@ func (s *AccessKeyService) GetConfig(id uuid.UUID) (*AccessKeyConfig, error) {
 		return nil, fmt.Errorf("decrypt secret: %w", err)
 	}
 
-	uri := vpn.ShadowsocksURI(key.Cipher, password, server.Hostname, key.Port, key.Name)
+	// Clients connect to the server's public TLS port (443), not Outline's
+	// internal data port (key.Port) - a TCP multiplexer in front of Caddy
+	// (see scripts/sslh.conf.example) inspects each connection and routes
+	// anything that isn't a real TLS handshake through to Outline. This
+	// makes the VPN reachable on networks/carriers that block or filter
+	// non-standard ports, since traffic on 443 is indistinguishable from
+	// ordinary HTTPS at the network level.
+	uri := vpn.ShadowsocksURI(key.Cipher, password, server.Hostname, server.TLSPort, key.Name)
 
 	crossPlatform := vpn.BuildCrossPlatformConfig(vpn.ConfigParams{
 		VPNDomain:        s.vpnDomain,
 		Method:           key.Cipher,
 		Password:         password,
-		FallbackPort:     key.Port,
+		FallbackPort:     server.TLSPort,
 		WebSocketPath:    key.WebSocketPath,
 		WebSocketUDPPath: key.WebSocketUDPPath,
 		SupportsUDP:      key.UDPEnabled,
