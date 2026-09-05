@@ -47,6 +47,12 @@ services:
       - "127.0.0.1:8080:8080"
     networks:
       - internal
+    extra_hosts:
+      # Lets OUTLINE_API_URL target the Docker host directly instead of
+      # round-tripping through the droplet's public IP, which cloud VPS
+      # networking (and ufw, since only 22/80/443 are open) often can't
+      # hairpin back to itself.
+      - "host.docker.internal:host-gateway"
 
 networks:
   internal:
