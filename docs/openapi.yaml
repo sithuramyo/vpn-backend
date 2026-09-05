@@ -1,0 +1,515 @@
+openapi: 3.0.3
+info:
+  title: VPN Management API
+  description: >
+    Control-plane API for the VPN admin dashboard. Never carries VPN
+    traffic; all Shadowsocks/WebSocket data-plane traffic goes directly to
+    vpn.thestrm.space, not through this API.
+  version: "1.0.0"
+servers:
+  - url: https://api.vpn.thestrm.space
+  - url: http://localhost:8080
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: auth
+  - name: admins
+  - name: users
+  - name: devices
+  - name: access-keys
+  - name: servers
+  - name: usage
+  - name: audit-logs
+  - name: metrics
+
+paths:
+  /api/v1/auth/google:
+    post:
+      tags: [auth]
+      summary: Exchange a Google ID token for a backend session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_token]
+              properties:
+                id_token:
+                  type: string
+      responses:
+        "200":
+          description: Session issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      token: { type: string }
+                      expires_at: { type: string, format: date-time }
+                      admin: { $ref: "#/components/schemas/Admin" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Google account is not authorized to access this system.
+
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      summary: Get the current authenticated administrator
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Admin" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: Log out the current session
+      responses:
+        "204":
+          description: Logged out
+
+  /api/v1/admins:
+    get:
+      tags: [admins]
+      summary: List administrators (ADMIN only)
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+      responses:
+        "200":
+          description: OK
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/admins/{id}:
+    get:
+      tags: [admins]
+      summary: Get an administrator (ADMIN only)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [admins]
+      summary: Update an administrator's role/status (ADMIN only)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { type: string, enum: [ADMIN, OPERATOR, VIEWER] }
+                status: { type: string, enum: [ACTIVE, DISABLED] }
+      responses:
+        "200": { description: OK }
+
+  /api/v1/users:
+    get:
+      tags: [users]
+      summary: List VPN users
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+        - name: status
+          in: query
+          schema: { type: string, enum: [ACTIVE, DISABLED, EXPIRED] }
+        - name: search
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+    post:
+      tags: [users]
+      summary: Create a VPN user (ADMIN/OPERATOR)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email]
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                expires_at: { type: string, format: date-time }
+                traffic_limit_bytes: { type: integer, format: int64 }
+      responses:
+        "201": { description: Created }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/v1/users/{id}:
+    get:
+      tags: [users]
+      summary: Get a VPN user
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [users]
+      summary: Update a VPN user (ADMIN/OPERATOR)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200": { description: OK }
+    delete:
+      tags: [users]
+      summary: Delete a VPN user (ADMIN/OPERATOR) - cascades access revocation
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "204": { description: Deleted }
+
+  /api/v1/users/{id}/disable:
+    post:
+      tags: [users]
+      summary: Disable a VPN user and revoke all their access (ADMIN/OPERATOR)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200": { description: OK }
+
+  /api/v1/devices:
+    get:
+      tags: [devices]
+      summary: List devices
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: platform
+          in: query
+          schema: { type: string, enum: [ANDROID, IOS, WINDOWS, MACOS] }
+        - name: user_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: OK }
+
+  /api/v1/devices/{id}:
+    get:
+      tags: [devices]
+      summary: Get a device
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200": { description: OK }
+    patch:
+      tags: [devices]
+      summary: Update/disable/revoke a device (ADMIN/OPERATOR)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                status: { type: string, enum: [ACTIVE, DISABLED, REVOKED] }
+      responses:
+        "200": { description: OK }
+    delete:
+      tags: [devices]
+      summary: Delete a device (ADMIN/OPERATOR)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "204": { description: Deleted }
+
+  /api/v1/access-keys:
+    get:
+      tags: [access-keys]
+      summary: List access keys
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: user_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: server_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: OK }
+    post:
+      tags: [access-keys]
+      summary: Create an access key (ADMIN/OPERATOR)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vpn_user_id, vpn_server_id, name]
+              properties:
+                vpn_user_id: { type: string, format: uuid }
+                vpn_server_id: { type: string, format: uuid }
+                name: { type: string }
+                expires_at: { type: string, format: date-time }
+                traffic_limit_bytes: { type: integer, format: int64 }
+                tcp_enabled: { type: boolean }
+                udp_enabled: { type: boolean }
+                websocket_enabled: { type: boolean }
+      responses:
+        "201": { description: Created }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/access-keys/{id}:
+    get:
+      tags: [access-keys]
+      summary: Get an access key (never includes the secret)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200": { description: OK }
+    delete:
+      tags: [access-keys]
+      summary: Delete an access key (ADMIN/OPERATOR)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "204": { description: Deleted }
+
+  /api/v1/access-keys/{id}/revoke:
+    post:
+      tags: [access-keys]
+      summary: Revoke an access key (ADMIN/OPERATOR)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200": { description: OK }
+
+  /api/v1/access-keys/{id}/rotate:
+    post:
+      tags: [access-keys]
+      summary: Rotate an access key's secret (ADMIN/OPERATOR)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200": { description: OK }
+
+  /api/v1/access-keys/{id}/config:
+    get:
+      tags: [access-keys]
+      summary: Get the client configuration, including the decrypted secret (ADMIN/OPERATOR)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      shadowsocks_uri: { type: string }
+                      cross_platform:
+                        type: object
+                        description: WSS-first, Shadowsocks-fallback transport list.
+
+  /api/v1/access-keys/{id}/qr:
+    get:
+      tags: [access-keys]
+      summary: Get a QR code (PNG) encoding the same config (ADMIN/OPERATOR)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200":
+          description: PNG image
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+
+  /api/v1/servers:
+    get:
+      tags: [servers]
+      summary: List servers
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+      responses:
+        "200": { description: OK }
+    post:
+      tags: [servers]
+      summary: Create a server (ADMIN only)
+      responses:
+        "201": { description: Created }
+
+  /api/v1/servers/{id}:
+    get:
+      tags: [servers]
+      summary: Get a server
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200": { description: OK }
+    patch:
+      tags: [servers]
+      summary: Update a server (ADMIN only)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200": { description: OK }
+    delete:
+      tags: [servers]
+      summary: Delete a server (ADMIN only)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "204": { description: Deleted }
+
+  /api/v1/servers/{id}/health:
+    get:
+      tags: [servers]
+      summary: Get server health (CPU, memory, uptime, Shadowsocks/Caddy status)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      status: { type: string, example: healthy }
+                      cpu_usage: { type: number, example: 21.5 }
+                      memory_usage: { type: number, example: 48.2 }
+                      active_connections: { type: integer, example: 12 }
+
+  /api/v1/servers/{id}/metrics:
+    get:
+      tags: [servers]
+      summary: Historical CPU/memory/bandwidth/connection samples for charts
+      parameters:
+        - $ref: "#/components/parameters/id"
+        - name: window
+          in: query
+          description: Go duration string, e.g. 24h, 720h
+          schema: { type: string, default: 24h }
+      responses:
+        "200": { description: OK }
+
+  /api/v1/usage/summary:
+    get:
+      tags: [usage]
+      summary: Aggregate traffic summary
+      responses:
+        "200": { description: OK }
+
+  /api/v1/usage/users:
+    get:
+      tags: [usage]
+      summary: Traffic broken down by user
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+      responses:
+        "200": { description: OK }
+
+  /api/v1/usage/servers:
+    get:
+      tags: [usage]
+      summary: Traffic broken down by server
+      responses:
+        "200": { description: OK }
+
+  /api/v1/audit-logs:
+    get:
+      tags: [audit-logs]
+      summary: List audit log entries
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+        - name: admin_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: action
+          in: query
+          schema: { type: string }
+        - name: resource_type
+          in: query
+          schema: { type: string }
+        - name: resource_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200": { description: OK }
+
+  /api/v1/metrics/summary:
+    get:
+      tags: [metrics]
+      summary: Dashboard stat-tile counts
+      responses:
+        "200": { description: OK }
+
+  /metrics:
+    get:
+      tags: [metrics]
+      summary: Prometheus text exposition format
+      security: []
+      responses:
+        "200": { description: OK }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    pageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 20 }
+
+  responses:
+    Unauthorized:
+      description: Session expired or invalid.
+    Forbidden:
+      description: Permission denied.
+    NotFound:
+      description: The requested resource was not found.
+    Conflict:
+      description: This resource already exists or conflicts with an existing one.
+    ValidationError:
+      description: Validation failed.
+
+  schemas:
+    Admin:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        name: { type: string }
+        picture_url: { type: string }
+        role: { type: string, enum: [ADMIN, OPERATOR, VIEWER] }
+        status: { type: string, enum: [ACTIVE, DISABLED] }
+        created_at: { type: string, format: date-time }
+        last_login_at: { type: string, format: date-time }

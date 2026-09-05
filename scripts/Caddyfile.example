@@ -1,0 +1,25 @@
+# Example Caddy config for the single-VPS deployment described in
+# VPN_Management_Backend_Prompt.md section 11/21. Caddy terminates TLS for
+# both hostnames; it never proxies raw Shadowsocks, only WebSocket
+# upgrades that the Outline server itself decodes into Shadowsocks.
+
+api.vpn.thestrm.space {
+	reverse_proxy 127.0.0.1:8080
+}
+
+vpn.thestrm.space {
+	# Each access key gets its own random path (see
+	# access_keys.websocket_path / websocket_udp_path) so the WebSocket
+	# route is unguessable without a valid key. Adjust the upstream to
+	# wherever the Outline server's WebSocket listener is bound.
+	@websocket {
+		header Connection *Upgrade*
+		header Upgrade    websocket
+	}
+	reverse_proxy @websocket 127.0.0.1:443 {
+		header_up Connection {http.request.header.Connection}
+		header_up Upgrade {http.request.header.Upgrade}
+	}
+
+	respond 404
+}

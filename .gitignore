@@ -1,0 +1,30 @@
+# Binaries
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+vpn-backend
+
+# Test artifacts
+*.test
+*.out
+coverage.*
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+client_secret*.json
+*.pem
+*.key
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
